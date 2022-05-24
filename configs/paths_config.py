@@ -1,6 +1,6 @@
 ## Pretrained models paths
 e4e = './pretrained_models/e4e_ffhq_encode.pt'
-stylegan2_ada_ffhq = '../pretrained_models/ffhq.pkl'
+stylegan2_ada_ffhq = './pretrained_models/ffhq.pkl'
 style_clip_pretrained_mappers = ''
 ir_se50 = './pretrained_models/model_ir_se50.pth'
 dlib = './pretrained_models/align.dat'

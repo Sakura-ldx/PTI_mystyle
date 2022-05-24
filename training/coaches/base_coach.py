@@ -40,7 +40,7 @@ class BaseCoach:
 
         # Initialize checkpoint dir
         self.checkpoint_dir = paths_config.checkpoints_dir
-        os.makedirs(self.checkpoint_dir, exist_ok=True)
+        os.makedirs(f'{self.checkpoint_dir}', exist_ok=True)
 
     def restart_training(self):
 
