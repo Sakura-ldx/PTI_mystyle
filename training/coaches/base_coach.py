@@ -48,9 +48,9 @@ class BaseCoach:
         self.G = load_old_G()
         toogle_grad(self.G, True)
 
-        self.original_G = load_old_G()
+        # self.original_G = load_old_G()
 
-        self.space_regulizer = Space_Regulizer(self.original_G, self.lpips_loss)
+        # self.space_regulizer = Space_Regulizer(self.original_G, self.lpips_loss)
         self.optimizer = self.configure_optimizers()
 
     def get_inversion(self, w_path_dir, image_name, image):

@@ -34,14 +34,17 @@ def run_PTI(run_name='', use_wandb=False, use_multi_id_training=False, mystyle=F
     embedding_dir_path = f'{paths_config.embedding_base_dir}/{paths_config.input_data_id}/{paths_config.pti_results_keyword}'
     os.makedirs(embedding_dir_path, exist_ok=True)
 
-    dataset = ImagesDataset(paths_config.input_data_path, transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])]))
+    if mystyle:
+        dataloader = None
+    else:
+        dataset = ImagesDataset(paths_config.input_data_path, transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])]))
 
-    dataloader = DataLoader(dataset, batch_size=1, shuffle=False)
+        dataloader = DataLoader(dataset, batch_size=1, shuffle=False)
 
-    if not hyperparameters.max_images_to_invert:
-        hyperparameters.max_images_to_invert = len(dataloader)
+        if not hyperparameters.max_images_to_invert:
+            hyperparameters.max_images_to_invert = len(dataloader)
 
     if use_multi_id_training:
         coach = MultiIDCoach(dataloader, use_wandb)
