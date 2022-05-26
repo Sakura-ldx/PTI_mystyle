@@ -30,13 +30,19 @@ class MystyleCoach(BaseCoach):
         os.makedirs(w_path_dir, exist_ok=True)
         os.makedirs(f'{w_path_dir}/{paths_config.pti_results_keyword}', exist_ok=True)
 
+        # seeds
+        origin_seed = 64
+        edit_seed = 123
+        a_seed = 347
+        batch_size = 4
+
         '''use_ball_holder = True
         w_pivots = []
         images = []'''
         # origin latent
         self.G.synthesis.eval()
         self.G.mapping.eval()
-        origin_seed = 64
+
         z_pivot = np.random.RandomState(origin_seed).randn(1, 512)
         with torch.no_grad():
             w_pivot = self.G.mapping(torch.from_numpy(z_pivot).to(global_config.device), None)
@@ -48,27 +54,36 @@ class MystyleCoach(BaseCoach):
         os.makedirs(dir, exist_ok=True)
         save_image(image_pivot[0], dir, f'{origin_seed}')
 
-        # edit latents
-        edit_seed = 123
-        z_edits = np.random.RandomState(edit_seed).randn(10, 512)
-        w_edits = self.G.mapping(torch.from_numpy(z_edits).to(global_config.device), None)
-        w_edits = w_edits.clone().detach()
-        w_distances = (w_edits - w_pivot) / torch.norm(w_edits - w_pivot, 2, dim=2, keepdim=True)
-
-        w_finals = []
-        a_seed = 347
-        a_s = np.random.RandomState(a_seed).uniform(low=-5.0, high=5.0, size=10)
-        for a in a_s:
-            for w_distance in w_distances:
-                w_finals.append(w_pivot + a * w_distance)
-        w_finals = torch.cat(w_finals, dim=0)
-        print(w_finals.shape)
-        batch_size = 4
-
         for i in tqdm(range(hyperparameters.max_pti_steps)):
+            z_edits = np.random.RandomState(edit_seed).randn(10, 512)
+            w_edits = self.G.mapping(torch.from_numpy(z_edits).to(global_config.device), None)
+            w_edits = w_edits.clone().detach()
+            w_distances = (w_edits - w_pivot) / torch.norm(w_edits - w_pivot, 2, dim=2, keepdim=True)
+
+            w_finals = []
+            a_s = np.random.RandomState(a_seed).uniform(low=-5.0, high=5.0, size=10)
+            for a in a_s:
+                for w_distance in w_distances:
+                    w_finals.append(w_pivot + a * w_distance)
+            w_finals = torch.cat(w_finals, dim=0)
+
+            if i == 0:
+                result = []
+                with torch.no_grad():
+                    for j in range(0, w_finals.shape[0], batch_size):
+                        w_finals_batch = w_finals[j:j + batch_size, :, :]
+                        generated_images = self.forward(w_finals_batch)
+                        result.append(generated_images)
+                result = torch.cat(result, dim=0)
+                dir = './result/{}/train_{}_{}/{:03d}'.format(global_config.run_name, edit_seed, a_seed, i)
+                os.makedirs(dir, exist_ok=True)
+                name = 0
+                for image in result:
+                    save_image(image, dir, '{}_{:03d}'.format(origin_seed, name))
+                    name += 1
+
             self.G.synthesis.train()
             self.G.mapping.train()
-
             for j in range(0, w_finals.shape[0], batch_size):
                 w_finals_batch = w_finals[j:j + batch_size, :, :]
                 real_images_batch = image_pivot.repeat([batch_size, 1, 1, 1])
@@ -91,7 +106,7 @@ class MystyleCoach(BaseCoach):
                         generated_images = self.forward(w_finals_batch)
                         result.append(generated_images)
                 result = torch.cat(result, dim=0)
-                dir = './result/{}/train/{:03d}'.format(global_config.run_name, i + 1)
+                dir = './result/{}/train_{}_{}/{:03d}'.format(global_config.run_name, edit_seed, a_seed, i + 1)
                 os.makedirs(dir, exist_ok=True)
                 name = 0
                 for image in result:
