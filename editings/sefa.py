@@ -44,3 +44,28 @@ def factorize_weight(g_ema, layers='all'):
     weight = weight / np.linalg.norm(weight, axis=0, keepdims=True)
     eigen_values, eigen_vectors = np.linalg.eig(weight.dot(weight.T))
     return layers, eigen_vectors.T, eigen_values
+
+
+def factorize_weight_stylegan3(G):
+
+    weights = []
+    for layer_id in range(2, G.num_ws // 2 + 2):
+        resolution = pow(2, layer_id)
+        #  conv0 not exist in first stage
+        try:
+            w = getattr(G.synthesis, f'b{resolution}').conv0.affine.weight
+            weight_gain = getattr(G.synthesis, f'b{resolution}').conv0.affine.weight_gain
+            w = (w * weight_gain).T
+            weights.append(w.cpu().detach().numpy())
+        except:
+            pass
+        w = getattr(G.synthesis, f'b{resolution}').conv1.affine.weight
+        weight_gain = getattr(G.synthesis, f'b{resolution}').conv1.affine.weight_gain
+        w = (w * weight_gain).T
+        weights.append(w.cpu().detach().numpy())
+
+    # shapes of weights in last 2 stage mismatch 512x512
+    weight = np.concatenate(weights, axis=1).astype(np.float32)
+    weight = weight / np.linalg.norm(weight, axis=0, keepdims=True)
+    eigen_values, eigen_vectors = np.linalg.eig(weight.dot(weight.T))
+    return eigen_vectors.T, eigen_values
