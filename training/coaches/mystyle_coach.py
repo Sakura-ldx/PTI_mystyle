@@ -41,16 +41,12 @@ class MystyleCoach(BaseCoach):
             g_path = f'{paths_config.checkpoints_dir}/model_{global_config.run_name}_{self.origin_seed}_sefa.pt'
 
         w_pivot, image_pivot = self.generate_origin(self.origin_seed, w_path_dir, images_path_dir)
+        real_images_batch = image_pivot.repeat([self.batch_size, 1, 1, 1])
+        self.G.synthesis.train()
+        self.G.mapping.train()
 
         for i in tqdm(range(hyperparameters.max_pti_steps)):
             w_finals = self.generate_edits(w_pivot)
-            if i == 0:
-                self.validate(w_finals, i, images_path_dir)
-
-            self.G.synthesis.train()
-            self.G.mapping.train()
-            real_images_batch = image_pivot.repeat([self.batch_size, 1, 1, 1])
-
             generated_images = self.forward(w_finals)
             loss = self.id_loss(generated_images, real_images_batch)
             print(loss)
@@ -59,8 +55,10 @@ class MystyleCoach(BaseCoach):
             loss.backward()
             self.optimizer.step()
 
-            if (i + 1) % 20 == 0:
-                self.validate(w_finals, i + 1, images_path_dir)
+            if i % 20 == 0:
+                self.validate(w_finals, i, images_path_dir)
+                self.G.synthesis.train()
+                self.G.mapping.train()
 
             global_config.training_step += 1
 
@@ -116,10 +114,10 @@ class MystyleCoach(BaseCoach):
             boundaries, _ = factorize_weight_stylegan3(self.G)
             w_edits = boundaries[:32]
 
-        weights = np.random.RandomState(478).randn(self.batch_size, w_edits.shape[0])
+        weights = np.random.randn(self.batch_size, w_edits.shape[0])
         w_edits = np.matmul(weights, w_edits)
         w_edits = w_edits / np.linalg.norm(w_edits, 2, axis=1, keepdims=True)
-        a_s = np.random.RandomState(self.a_seed).uniform(low=-5.0, high=5.0, size=(self.batch_size, 1))
+        a_s = np.random.uniform(low=-5.0, high=5.0, size=(self.batch_size, 1))
 
         w_finals = w_pivot + torch.from_numpy(a_s * w_edits).unsqueeze(1).repeat([1, 18, 1]).float().to(global_config.device)
         return w_finals
