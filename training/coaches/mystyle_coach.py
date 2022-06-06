@@ -2,10 +2,12 @@ import os
 
 import numpy as np
 import torch
+import wandb
 from PIL import Image
 from tqdm import tqdm
 
 from configs import paths_config, hyperparameters, global_config
+from criteria import l2_loss
 from editings.sefa import factorize_weight_stylegan3
 from models.StyleCLIP.criteria import id_loss
 from training.coaches.base_coach import BaseCoach
@@ -24,8 +26,8 @@ class MystyleCoach(BaseCoach):
         self.id_loss = id_loss.IDLoss().to(global_config.device).eval()
         self.origin_seed = 64
         self.edit_seed = 123
-        self.a_seed = 347
-        self.batch_size = 4
+        self.batch_size = 6
+        self.direct = 5.0
         self.random = False
 
     def train(self):
@@ -36,9 +38,9 @@ class MystyleCoach(BaseCoach):
         images_path_dir = './result'
         os.makedirs(f'{images_path_dir}', exist_ok=True)
         if self.random:
-            g_path = f'{paths_config.checkpoints_dir}/model_{global_config.run_name}_{self.origin_seed}_{self.edit_seed}_{self.a_seed}.pt'
+            g_path = f'{paths_config.checkpoints_dir}/model_{global_config.run_name}_{self.origin_seed}_{self.edit_seed}_{self.direct}.pt'
         else:
-            g_path = f'{paths_config.checkpoints_dir}/model_{global_config.run_name}_{self.origin_seed}_sefa.pt'
+            g_path = f'{paths_config.checkpoints_dir}/model_{global_config.run_name}_{self.origin_seed}_sefa_{self.direct}.pt'
 
         w_pivot, image_pivot = self.generate_origin(self.origin_seed, w_path_dir, images_path_dir)
         real_images_batch = image_pivot.repeat([self.batch_size, 1, 1, 1])
@@ -48,11 +50,19 @@ class MystyleCoach(BaseCoach):
         for i in tqdm(range(hyperparameters.max_pti_steps)):
             w_finals = self.generate_edits(w_pivot)
             generated_images = self.forward(w_finals)
-            loss = self.id_loss(generated_images, real_images_batch)
-            print(loss)
+            loss = 1 / self.direct * self.id_loss(generated_images, real_images_batch)
+            print('loss: ', float(loss))
 
             self.optimizer.zero_grad()
             loss.backward()
+            self.optimizer.step()
+
+            new_origin_image = self.forward(w_pivot)
+            loss_origin, _, _, _ = self.calc_loss(new_origin_image, image_pivot, f'{self.origin_seed}')
+            print('loss origin: ', float(loss_origin))
+
+            self.optimizer.zero_grad()
+            loss_origin.backward()
             self.optimizer.step()
 
             if i % 20 == 0:
@@ -117,9 +127,33 @@ class MystyleCoach(BaseCoach):
         weights = np.random.randn(self.batch_size, w_edits.shape[0])
         w_edits = np.matmul(weights, w_edits)
         w_edits = w_edits / np.linalg.norm(w_edits, 2, axis=1, keepdims=True)
-        a_s = np.random.uniform(low=-5.0, high=5.0, size=(self.batch_size, 1))
+        a_s = np.random.uniform(low=-self.direct, high=self.direct, size=(self.batch_size, 1))
 
         w_finals = w_pivot + torch.from_numpy(a_s * w_edits).unsqueeze(1).repeat([1, 18, 1]).float().to(global_config.device)
         return w_finals
+
+    def calc_loss(self, generated_images, real_images, log_name):
+        loss = 0.0
+
+        if hyperparameters.pt_l2_lambda > 0:
+            l2_loss_val = l2_loss.l2_loss(generated_images, real_images)
+            if self.use_wandb:
+                wandb.log({f'MSE_loss_val_{log_name}': l2_loss_val.detach().cpu()}, step=global_config.training_step)
+            loss += l2_loss_val * hyperparameters.pt_l2_lambda
+        if hyperparameters.pt_lpips_lambda > 0:
+            loss_lpips = self.lpips_loss(generated_images, real_images)
+            loss_lpips = torch.squeeze(loss_lpips)
+            if self.use_wandb:
+                wandb.log({f'LPIPS_loss_val_{log_name}': loss_lpips.detach().cpu()}, step=global_config.training_step)
+            loss += loss_lpips * hyperparameters.pt_lpips_lambda
+        if hyperparameters.pt_id_lambda > 0:
+            id_loss = self.id_loss(generated_images, real_images)
+            id_loss = torch.squeeze(id_loss)
+            if self.use_wandb:
+                wandb.log({f'id_loss_val_{log_name}': id_loss.detach().cpu()}, step=global_config.training_step)
+            loss += id_loss * hyperparameters.pt_id_lambda
+
+        return loss, l2_loss_val, loss_lpips, id_loss
+
 
 
